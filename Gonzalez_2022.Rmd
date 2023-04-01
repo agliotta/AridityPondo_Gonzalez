@@ -1,0 +1,431 @@
+---
+title: "Increased aridity is associated with stronger tradeoffs in ponderosa pine vital functions"
+author: "Angie Gonzalez"
+date: '2023-01-28'
+output: html_document
+---
+
+This formatted markdown document includes all analyses described in the following article:
+Gonzalez, A.D., Pearse, I.S., Redmond, M.D. Increased aridity is associated with stronger tradeoffs in ponderosa pine vital functions.
+
+
+The code below is separated into two groupings of models, 1) over time, and 2) among individuals. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading necessary packages for analysis
+```{r packages, echo=F, message=F, warning=F}
+install.packages(c("sjPlot", "tidyverse", "lme4", "glmmTMB", "lmerTest", "ggeffects", "MuMIn", "effects"))
+
+Packages <- c ("tidyverse", "lme4", "sjPlot", "glmmTMB", "lmerTest", "ggeffects", "effects", "MuMIn")
+lapply(Packages, library, character.only = TRUE)
+
+```
+
+## Loading files and formatting
+```{r files, echo=T}
+
+all_data <- read.csv("annual_data.csv")
+all_data <- all_data %>% subset(select=-c(X)) #dropping unneccessary columns
+tree_avgs <- read.csv("averages_data.csv")
+
+ggplot(all_data)+geom_bar(aes(year)) # reviewing cone counts by year
+all_data <- all_data %>% subset(year<=2020 & year>=2003) # dropping 2003 and prior due to limited observations
+
+```
+
+```{r model-fitting, echo=F}
+
+## which resin metric makes most sense to use? AIC test to determine --- 
+
+test <- lmer(resinarea2~growth12+(1|site/tree),na.action = "na.fail", all_data) # the best by far
+test1 <- lmer(totalresinarea~growth12+(1|site/tree),na.action = "na.fail", all_data)
+test2 <- lmer(meanductsize~growth12+(1|site/tree),na.action = "na.fail", all_data)
+AICc(test, test1, test2)
+
+# one more time w/ cones
+test <- lmer(resinarea2~conematur+(1|site/tree),na.action = "na.fail", all_data) # again - the best by far
+test1 <- lmer(totalresinarea~conematur+(1|site/tree),na.action = "na.fail", all_data)
+test2 <- lmer(meanductsize~conematur+(1|site/tree),na.action = "na.fail", all_data)
+AICc(test, test1, test2)
+
+# now lets move to testing the appropriate predictors and controls
+
+test <- lmer(resinarea2~growth12+FDSI+(1|site/tree),na.action = "na.fail", all_data)
+test1 <- lmer(resinarea2~growth12+BA5+dbh+(1|site),na.action = "na.fail", tree_avgs)
+
+dredge(test) # best model w/out FDSI
+dredge(test1) # best model w/out BA or DBH
+
+#checking again w/ other combos just to be safe. Will use same test df names to overwrite.
+test <- lmer(growth12~conematur+FDSI+(1|site/tree), na.action = "na.fail", all_data)
+test1 <- lmer(growth12~conematur+BA5+dbh+(1|site), na.action = "na.fail", tree_avgs)
+
+conesinit_DF <- na.omit(all_data) # Na's in original dataframe because of 2020 year (no initiation measurements because it takes cones roughly 2 years to mature and measurements were taken in 2020 at maturity)
+test2 <- lmer(growth12~coneinit+FDSI+(1|site/tree), na.action = "na.fail", conesinit_DF)
+
+dredge(test) # best model w/ FDSI
+dredge(test1) # best model shows nothing. Pretty much saying its a bad model. 
+dredge(test2) # again, best model with only FDSI and not cone init.
+
+# also, if you re run this line of code with growth log transformed, the AIC values are significantly lower. We will definitely be log transforming these models. 
+# lets do one more set of runs to ensure that we don't need DBH or BA. 
+
+test <- lmer(resinarea2~conematur+FDSI+(1|site/tree), na.action = "na.fail", conesinit_DF)
+test1 <- lmer(resinarea2~coneinit+FDSI+(1|site/tree), na.action = "na.fail", conesinit_DF)
+test2 <- lmer(resinarea2~conematur+BA5+dbh+(1|site), na.action = "na.fail", tree_avgs)
+
+dredge(test) # cone mature and FDSI are second to just FDSI, aic difference is 2 so i feel ok sticking with both.
+dredge(test1) 
+# model with only FDSI. contint and FDSI is second best. but there is a bit difference in these values (about 21). Either way, our interest is in tradeoffs so we will be keeping this intercept regardless.
+
+dredge(test2) # model with no explanatory variables is best, followed by BA only, then DBH only, then conemature only. A model with all three is the worst. A model with only cones is better than alternatives. Will move forward without BA or DBH. 
+
+remove(test, test1, test2, conesinit_DF)
+
+````
+
+```{r exploration-colinearity}
+# NOTE: the outlier below was removed in the data calculations RMD script before the tree averages csv was created. I found a few outliers in the averages dataframe but did not remove them because of the small number of observations, the fact that certain trees were not consistent outliers across variables makes it difficult to decide to remove outlier. The only outlier that was grossly higher than the others is the one below. I may also be doing transformations on these models to meet assumptions; Following assumption checks, outliers, colinearity review as suggested in Zurr 2009.
+
+# outlier was found in resinarea column. double checking - resin area ~11.
+all_data[785,] # our outlier is in row 785
+all_data <- all_data[-785,] # pretty huge outlier. choosing to remove data.
+
+
+datapair <- all_data
+datapair <- datapair %>% na.omit()
+datapair <- row.names(datapair)<-datapair$tree
+datapair <- datapair %>% subset(select=-c(year, tree, site, growth5, slope, aspect, dbh, crown.class, height, crown.fullness, BA10, BA20, Leadershoots, wue, cones))
+datapair <- lapply(datapair, as.numeric) # ensuring all are reading as numeric
+pairs(datapair)
+# looks good. 
+datapair <- as.data.frame(datapair)
+datacor<-as.data.frame(cor(datapair))
+datacor
+# all looks fine. no colinearity.
+remove(datacor, datapair)
+```
+
+
+### Models Among Individuals ############################################
+
+The models below are all analyzed using the "tree_avgs" CSV.
+
+Final models will be as follows y~x* (cwd or wue) + (1|site)
+results from AIcc choosing best model fit. 
+
+resin~growth models among individuals
+```{r resin-growth, echo=F}
+
+dotchart(log(tree_avgs$resinarea2))
+dotchart(tree_avgs$resinarea2) # log looks much better
+
+## C13 and CWD models for resin~growth relationship among individuals (avgs)
+tree_ductgrow_mod1 <-lmer(log(resinarea2)~scale(growth12)*scale(wuecentered)+(1|site), tree_avgs)
+tree_ductgrow_mod2 <-lmer(log(resinarea2)~scale(growth12)*scale(cwd)+(1|site), tree_avgs)
+
+plot_model(tree_ductgrow_mod1, type="diag") #not the best, but not terrible. looks OK
+plot_model(tree_ductgrow_mod2, type="diag") #OK
+
+summary(tree_ductgrow_mod1) # growth is positively correlated. No other term is significant. Carbon discrimination -no impact.
+tab_model(tree_ductgrow_mod1, show.df = TRUE) ## this output gives us an html table with our standardized estimates, CIs and other summary outputs
+
+summary(tree_ductgrow_mod2) # same pattern as above. Only growth as positive correlation. Nothing else significant. 
+tab_model(tree_ductgrow_mod2, show.df=TRUE)
+
+```
+
+Plotting significant models 
+
+```{r resin-growth-plots, echo=F, include=F}
+# Let's plot the first model w/ out the interaction since it was not significant. If interaction is not significant we will plot the first model ran (c13) for consistency. 
+
+# making data frame with resin-growth estimates pulled from model
+ef_growth <-ggpredict(tree_ductgrow_mod1, terms = c("growth12"), type = "fixed")
+ef_growth
+
+#making plot ~ 
+
+ggplot(ef_growth, aes(x = x, y = predicted)) +
+  geom_line(linetype="F1")+
+  geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) + geom_point(data=tree_avgs, aes(growth12, resinarea2),
+  ) +labs(title="", shape="Site", y="Average Relative Duct Area (% annual ring)", x="Average Annual Growth (mm)"
+  ) + scale_shape_manual(values=1:8) + theme_gray(base_size=9) 
+
+```
+
+resin~cone models among individuals
+
+```{r resin-cones}
+
+tree_ductscone <- lmer(log(resinarea2)~scale(conematur)*scale(wuecentered)+(1|site), tree_avgs) 
+plot_model(tree_ductscone, type="diag") # not bad. Some issues, but nothing major
+dotchart(log(tree_avgs$resinarea2)) # definitely should be log transformed. any potential outliers have far less influence because spread is increased substantially.  
+
+tree_ductscone1 <- lmer(resinarea2~scale(conematur)*scale(wuecentered)+(1|site), tree_avgs) 
+plot_model(tree_ductscone1, type="diag") ## the back transformation makes the it slightly worse, it has a slight skew without it. let's keep it transformed so it has the bell curve and the spread is a little better for homogeneity. 
+remove(tree_ductscone1)
+
+# cwd
+tree_ductscone1 <- lmer(log(resinarea2)~scale(conematur)*scale(cwd)+(1|site), tree_avgs) 
+
+plot_model(tree_ductscone, type="pred")
+# summary output of both models
+summary(tree_ductscone)
+tab_model(tree_ductscone)
+summary(tree_ductscone1)
+tab_model(tree_ductscone1)
+
+# we are not seeing significance among cones and resin for either model. We are seeing a simple effect of C13 on resin area. Individuals with higher carbon discrimination have lower resin area. Interesting! - Note that carbon discrimination value is centered, so these values represent carbon discrimination above and below the mean at each site. 
+
+````
+
+plotting significant models. Plotting only resin~carbon model
+
+```{r resin-carbon-plotting}
+
+### we are going to plot this one a little differently. Effects appears to plot easier than ggpredict.
+
+ef_ductcones13 <- as.data.frame(effect(term =c("scale(wuecentered)"), mod=tree_ductscone))
+
+summary(ef_ductcones13) # double checking it looks correct. 
+
+ggplot() + geom_point(data=tree_avgs, aes(x= wuecentered, y=log(resinarea2)),
+) +geom_line(data=ef_ductcones13, aes(x=wuecentered, y=fit), color="black", linetype="F1"
+) +geom_ribbon(data= ef_ductcones13, aes(x=wuecentered, ymin=lower, ymax=upper),alpha= 0.3
+) +labs(shape="Site", y="Log of Relative Duct Area (% annual ring)", x=expression(Delta*"13C - Centered by Site")
+) + xlim(-1, 1)+ theme_gray(base_size=9) +theme_bw()
+## because our centered carbon discrimination values are between -1 and 1, i limited the x axis so it looks better visually. 
+
+ef_ductcone <-ggpredict(tree_ductscone, terms = c("conematur"), type = "fixed")
+#making plot ~ 
+
+ggplot(ef_growth, aes(x = x, y = predicted)) +
+  geom_line(linetype="F1")+
+  geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) + geom_point(data=tree_avgs, aes(x=conematur, y=resinarea2),
+  ) +labs(title="", shape="Site", y="Average Relative Duct Area (% annual ring)", x="Average Cone Abundance"
+  ) + scale_shape_manual(values=1:8) + theme_gray(base_size=9)
+
+
+```
+
+moving forward to the final model among individuals model.
+```{r growth-cones}
+# we are going to try this log transformed since cones is in our y axis.
+dotchart()
+
+tree_conesgrowth <- lmer(log(growth12)~scale(conematur)*scale(wuecentered)+(1|site), tree_avgs)
+
+plot_model(tree_conesgrowth, type="diag") # looks good.
+
+# trying w/out log transformation
+tree_conesgrowth1 <-lmer(growth12~scale(conematur)*scale(wuecentered)+(1|site), tree_avgs)
+plot_model(tree_conesgrowth1, type="diag") # worse- but nothing too crazy. let's remove this and stick with log transformation
+# double checking spread
+dotchart(log(tree_avgs$growth12))
+dotchart(tree_avgs$growth12) # keeping it transformed. 
+
+remove(tree_conesgrowth1)
+
+#CWD interaction:
+tree_conesgrowth1 <-lmer(log(growth12)~scale(conematur)*scale(cwd)+(1|site), tree_avgs)
+
+
+summary(tree_conesgrowth)
+tab_model(tree_conesgrowth)
+summary(tree_conesgrowth1)
+tab_model(tree_conesgrowth1)
+
+## we are not seeing any significance in these relationships. Cones is not impacting growth and local climate is not interacting with these relationships. 
+# We are seeing that local neighborhood competition(BA5) is impacting average growth. As competition increases, average growth decreases. 
+
+```
+Nothing to be plotted in this last set of analyses. We aren't seeing any trade offs among functions among individuals. We did see a positive correlation between resin and growth. In that individuals who had higher growth also had higher resin. Carbon discrimination did impact average resin area. Individuals with higher carbon discrimination had lower average resin area. 
+
+### Models over time###################################
+
+Let's move forward with our analyses over time. This is probably where we will start seeing some interesting things. These models are divided up in the same fashion. The main question with these analyses are: How is an individual varying its resource allocation patterns annually? Are we seeing different trade off patterns over time and is climate impacting this?  
+
+```{r resin-growth}
+
+#WUE model:
+year_ductgrow_mod <-lmer(resinarea2~growth12*wuecentered+(1|site/tree), all_data)
+
+plot_model(year_ductgrow_mod, type="diag") # not great, but not bad. Let's try sqrt transformation. Heterogeneity is a concern here.
+
+year_ductgrow_mod1 <-lmer(sqrt(resinarea2)~(growth12)*scale(wuecentered)+(1|site/tree), all_data) # sqrt transformation because of 0 values.
+plot_model(year_ductgrow_mod1, type="diag") # significantly better; the spread is increased. Heterogeneity is still of concern but it doesnt seem to be a major violation. Most of it has a good spread. Some clustering at the left but nothing too crazy. linearity and normality look pretty good. some stuff at tail end. 
+dotchart(all_data$resinarea2)
+dotchart(sqrt(all_data$resinarea2)) # better with transformation; there is a wider spread but you can still see several potential outliers. hard to tell here. 
+
+remove(year_ductgrow_mod)
+
+summary(year_ductgrow_mod1)
+
+tab_model(year_ductgrow_mod1, show.df=TRUE) 
+
+#CWD model:
+year_ductgrow_mod2 <- lmer(sqrt(resinarea2)~scale(growth12)*scale(cwd)+(1|site/tree), all_data)
+
+summary(year_ductgrow_mod2)
+tab_model(year_ductgrow_mod2)
+
+
+## we are seeing the same pattern as we saw before. C13 and CWD are impacting these relationships. we are also seeing that resin area and growth are positively correlated w/ one another. 
+
+```
+
+plotting model
+```{r resin-growth-plotting}
+
+### you are going to need to redo this - i will make a note to myself so i remember to fix it. 
+
+ef_growth1 <-ggpredict(year_ductgrow_mod1, terms = c("growth12"), type = "fixed")
+ef_growth1
+
+
+ggplot(ef_growth1, aes(x = x, y = predicted)
+    )+geom_line(linetype="F1")+geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) +labs(title="", shape="Site", y=expression("Annual Relative Resin Area ("*mm^2*")"), x="Annual Growth (mm)"
+  ) + geom_point(data=all_data, aes(growth12, totalresinarea, group=site, shape=site),
+     )+ scale_shape_manual(values=1:8) + theme_gray(base_size=9) 
+
+ef_cwd_Defgrow <-ggpredict(year_ductgrow_mod2, terms = c("growth12", "cwd[meansd]"))
+
+ plot(ef_cwd_Defgrow, add.data=TRUE,colors=c("#8fb771","#8961b3", "#b8545c"), dot.alpha=.5, dot.size=0.5
+            ) + labs(title = "", x="Annual Growth (mm)", y="Relative Duct Area (% annual ring)", color="CWD (mm)"
+            ) + theme(legend.position = "top", text=element_text(size=9)) 
+
+```
+
+
+moving on to the resin-cone relationship. 
+```{r resin-cone}
+
+#wue model#
+
+#let's double check the transformation on this one as well
+year_ductscone <- lmer(resinarea2~scale(conematur)*scale(wuecentered)+scale(FDSI)+(1|site/tree), all_data)
+plot_model(year_ductscone, type="diag") # very bad heterogenity violation
+
+year_ductscone1 <- lmer(sqrt(resinarea2)~scale(conematur)*scale(wuecentered)+scale(FDSI)+(1|site/tree), all_data) 
+plot_model(year_ductscone1, type="diag") 
+## once again, not much as changed. Diag is not bad, but definitely not perfect. Will go w/ sqrt transformation again because it slightly increased that spread of the normal distribution.
+remove(year_ductscone)
+
+summary(year_ductscone1)
+# we are seeing some tradeoffs with this relationship. 
+# WUE is very close to significant. just missed our 'cut off'. i believe its worth mentioning. the slight negative relationship. no interaction, FDSI is behaving expected.
+
+#cwd model#
+year_ductscone <- lmer(sqrt(resinarea2)~scale(conematur)*scale(cwd)+scale(FDSI)+(1|site/tree), all_data) 
+plot_model(year_ductscone, type="diag") 
+
+summary(year_ductscone)
+
+tab_model(year_ductscone, show.df = TRUE)
+tab_model(year_ductscone1)
+# very interesting results. We saw that years of high cone abundance led to decreases in resin area. Individuals are changing their allocation patterns in years of high cone production. Interesting! The relationship is not being impacted by local climate or drought resistance. 
+# We are also seeing FDSI is impacting total resin area. Higher resin area in wet years. 
+## CWD also had some small simple effect (not significant). Dry sites have higher total resin area.
+
+
+# Cone initiation ## 
+
+year_ductscone2 <- lmer(sqrt(resinarea2)~scale(coneinit)*scale(wuecentered)+scale(FDSI)+(1|site/tree), all_data) 
+plot_model(year_ductscone2, type="diag") 
+year_ductscone3 <- lmer(sqrt(resinarea2)~scale(coneinit)*scale(cwd)+scale(FDSI)+(1|site/tree), all_data) 
+plot_model(year_ductscone3, type="diag") 
+summary(year_ductscone2)
+summary(year_ductscone3)
+
+````
+
+```{r resin-cone-plotting}
+
+
+ef_cone <-ggpredict(year_ductscone1, terms = c("conematur"), type = "fixed")
+# let's plot these in the same manner as we have been for consistency.
+
+ggplot(ef_cone, aes(x = x, y = predicted)) +
+  geom_line(linetype="F1")+
+  geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) + geom_point(data=all_data, aes(x=conematur, y=totalresinarea, group=site, shape=site),
+  ) +labs(title="", shape="Site", y=expression("Annual Total Resin Area ("*mm^2*")"), x="Annual Cone Abundance"
+  ) + scale_shape_manual(values=1:8) + theme_gray() 
+
+
+
+## the resin wue plot
+ef_ductwue <- as.data.frame(effect(term =c("scale(wuecentered)"), mod=year_ductscone1))
+
+summary(ef_ductwue) # double checking it looks correct. 
+
+ggplot() + geom_point(data=all_data, aes(x= wuecentered, y=sqrt(resinarea2)), color="darkgrey"
+) +geom_line(data=ef_ductwue, aes(x=wuecentered, y=fit), color="black", linetype="F1"
+) +geom_ribbon(data= ef_ductwue, aes(x=wuecentered, ymin=lower, ymax=upper),alpha= 0.3
+) +labs(shape="Site", y=expression(sqrt("Relative Duct Area ") *" (% annual ring)"), x=expression(Delta*"13C - Centered by Site")
+) + xlim(-1, 1)+ theme_gray(base_size=9) +theme_bw()
+
+```
+Moving on to our final model. Growth and cones.
+```{r growth-cone}
+# let's double check our log transformation. Based on what we saw above I am assuming we will need it to be log transformed. 
+# we are going to play with some transformations on this one. I am going to try sqrt first. 
+yr_conegrow<- lmer(growth12~scale(conematur)*scale(wuecentered)+scale(FDSI)+(1|site/tree), data=all_data)
+
+plot_model(yr_conegrow, type="diag") # once again, heterogeneity violated. Sqrt?
+yr_conegrow1<- lmer(sqrt(growth12)~scale(conematur)*scale(wuecentered)+scale(FDSI)+(1|site/tree), data=all_data)
+plot_model(yr_conegrow1, type="diag") # better but not great. there is still a small fan pattern.
+yr_conegrow2<- lmer(log(growth12+1)~scale(conematur)*scale(wuecentered)+scale(FDSI)+(1|site/tree), data=all_data) # +1 for 0s
+plot_model(yr_conegrow2, type="diag") # it looks the same. i'll stick with sqrt for consistency. 
+
+remove(yr_conegrow, yr_conegrow2)
+
+dotchart(all_data$growth12) # one more check of spread 
+dotchart(sqrt(all_data$growth12)) # def needs transformation
+
+summary(yr_conegrow1)
+
+yr_conegrow2<- lmer(sqrt(growth12)~scale(conematur)*scale(cwd)+scale(FDSI)+(1|site/tree), data=all_data)
+plot_model(yr_conegrow2, type="diag") # just a double check
+# this one is tough. tranformed it does improve normality and linearity, it also increases spread for homoscedacity but there is still evidence of violations of heterogenity. others look fine though. Let's keep it. 
+
+summary(yr_conegrow2) # we are seeing some patterns here! Once again, years of high cone production are resulting in lowered growth. Another tradeoff. C13 is not impacting this again. FDSI is showing the same relationship as with total resin area.
+
+
+# let's see what this prediction looks like w/ different CWD values
+ef_conegrow_cwd <- as.data.frame(effect(term =c("scale(conematur):scale(cwd)"), mod=yr_conegrow1))
+ef_conegrow_cwd
+# you can see upper and lower cone pred w/ high or low CWD. Not much of a decrease in growth with lowest CWD. Highest CWD sees a drastic reduction in growth during mast years. I also noticed that there are higher growth during non-mast years. Is that to compensate for mast year reduction in growth?
+# wetter sites could potentially have consistent and constant growth, while drier sites show stronger prioritization year to year. 
+
+tab_model(yr_conegrow1, show.df=TRUE)
+tab_model(yr_conegrow2)
+
+
+```
+
+```{r growth-cones-plotting}
+
+# I had a lot of issues plotting an interaction w/ ggpredict and effects, so I will be using sjplot. Unfortunately I cannot have a log transformation in my plot. It will remove the CI intervals if I do. I am going to run this model again w/out tranformation so it can be plotted. BUT keep the summary table with log transformation for your interpretation. 
+
+
+plot_model(yr_conegrow2, type="int", mdrt.values = "meansd", title=c(""
+    ),legend.title =c("Climatic Water Deficit"),axis.title=c("Cone Abundance", "Annual Growth (mm)"
+    ), group.terms = c(1, 2, 3), colors = "bw", show.data=TRUE, dot.size=0.5
+  ) +theme_bw() # nice. Interesting relationship here. The lowest CWD sites seem to have a very small trade off. It is almost parallel. 
+
+
+ef_cwdconegrow <- ggpredict(yr_conegrow2, terms = c("conematur", "cwd"))
+
+ggplot(ef_cwdconegrow, aes(x = x, y = predicted, stroke=0, size=0.00005)
+  )+geom_line(size=1)+geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15)+ geom_jitter(data=all_data, aes(growth12, conematur, size=0.0000001, stroke=0))
+
+
+
+```
+
+

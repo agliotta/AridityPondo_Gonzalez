@@ -1,0 +1,366 @@
+---
+title: "Increased aridity is associated with stronger tradeoffs in ponderosa pine vital functions"
+author: "Angie Gonzalez"
+date: '2023-01-28'
+output: html_document
+---
+
+This formatted markdown document includes all data calculations and formatting needed for the analysis and described in the following article:
+Gonzalez, A.D., Pearse, I.S., Redmond, M.D. Increased aridity is associated with stronger tradeoffs in ponderosa pine vital functions.
+
+The code below includes all processing and calculations that were used to get the variables in the appropriate format for the analysis. This RMD markdown pulls in all of the RAW datasets that were collected in this study and combines them into a single file. For the analysis file and code, see 'Gonzalez_2022.Rmd'
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading necessary packages and files
+```{r packages, echo=T, message=F}
+library(data.table)
+library(dplyr)
+library(tidyr)
+
+
+# pulling in all data collected in the field
+fielddata <- read.csv("FieldData_2020.csv", header=T)
+fielddata <- subset(fielddata, select= -c(Notes))
+
+#pulling in all raw ring width from 5mm and 12mm cores. We will need to melt this into the correct format. 
+ringwidths12 <-read.csv("ringwidths_12mm.csv", header=T)
+ringwidths5 <- read.csv("ringwidths_5mm.csv", header=T)
+
+# and conescar counts
+conescars <- read.csv("conescars.csv", header=T)
+conescars <- subset(conescars, select=c("site", "tree", "year", "cones"))
+
+# all data pulled , EXCEPT climate and carbon isotopes
+
+#each tree is listed by site and tree tag #. Example: BD (site) 168 (tree tag)
+
+```
+
+
+# let's start with the ring width data
+
+```{r ringwidth data, echo=FALSE}
+### reformatting ring width data frame to mimic cone scars
+### using melt function to remove everything but Year. 
+
+ringwidths12 <- as.data.table(ringwidths12) #converting to data table for melt function to work
+ringwidthsmelt12 <- melt(ringwidths12, id.vars=c("Year"))
+
+annualgrowth12 <- ringwidthsmelt12 %>% separate(variable, 
+                c("site", "tree"))
+annualgrowth12 <- annualgrowth12 %>% rename(year=Year, growth12=value) ## matching other dataset
+annualgrowth12 <- annualgrowth12 %>% subset(year<=2020 & year>=2000) #subsetting to years of interest
+
+#### doing this again with 5mm growth info to add to master
+ringwidths5 <- as.data.table(ringwidths5)
+ringwidthsmelt5 <- melt(ringwidths5, id.vars=c("Year"))
+annualgrowth5 <- ringwidthsmelt5 %>% separate(variable,c("site", "tree"))
+
+annualgrowth5 <- annualgrowth5 %>% rename(year=Year, growth5=value) ## matching other dataset
+annualgrowth5 <- annualgrowth5 %>% subset(year<=2020 & year>=2000)
+
+```
+# merging conescar data with ringwidths to create master file
+
+```{r merging-files}
+#let's merge all files into one data frame
+timeseries <- merge(annualgrowth12,conescars,by=c("year","tree","site"))
+timeseries <- merge(timeseries, annualgrowth5, by=c("year","tree","site"))
+all_data <- merge(timeseries, fielddata, by=c("tree", "site"), all.x=TRUE)
+
+#removing extra dataframes from enviroments
+remove(timeseries, annualgrowth5, annualgrowth12, ringwidths12, ringwidths5, ringwidthsmelt12, ringwidthsmelt5, fielddata, conescars)
+
+# we also need coneabundance counts on mature and initiation 
+all_data$conematur <- cbind(all_data$cones*all_data$Leadershoots)
+#multiplying cone counts by leadershoots to get estimate
+
+coneinit <- subset(all_data, select=c("tree", "site", "year", "conematur"))
+coneinit$year <- coneinit$year-1
+coneinit <- coneinit %>% rename(coneinit=conematur)
+
+all_data <- merge(all_data, coneinit, by=c("tree", "site", "year"), all.x=TRUE)
+
+
+```
+
+Now we need to add in the resin duct measurements
+```{r resin-duct-calculations}
+
+# adding length and duct measurements taken on all 12mm cores
+master_length <- read.csv("master_length.csv")
+master_ducts <- read.csv("master_ducts.csv")
+
+master_length <- master_length %>% rename(year=Year)
+master_ducts <- master_ducts %>% rename(year=Year)
+### creating my metric for resin ducts
+### This metric does not account for ring area. Length will not be used, but was taken for further potential analyses.
+
+# adding ring width and ducts to the master length document to calculate ring area
+master_length <- merge(master_length, all_data[ ,c("site", "tree", "year","growth12")], by=c("site", "tree", "year"))
+# creating new DF with merge all
+master_all <- merge(master_length, master_ducts, by=c("site", "tree", "year"))
+
+### Relative Duct Area (% annual ring) the total duct area divided by ring area squared multiplied by 100, this is a standardized measurement.
+
+# ring with multiplied by core diameter is ring area.
+
+ringarea <- master_all %>% group_by(tree, year, site) %>% summarise(resinarea2 = sum(Area)/((Length-Scar)^2)*100)
+
+ringarea <- unique(ringarea, by=c("tree,", "site", "year"))
+
+all_data <- merge(all_data, ringarea, by=c('tree', 'year', 'site'))
+
+
+# creating total resin area metric as well. - found as best predictor of resin flow
+totalresinarea <- master_ducts %>% group_by(tree, year, site) %>% 
+  summarise(totalresinarea =sum(Area))
+
+all_data <- merge(all_data, totalresinarea, by=c('tree', 'year', 'site'))
+
+
+# one more - lets do mean duct size. 
+## 2nd is mean Resin duct size (mm2 of cross sectional area): mean size of all ducts per annual ring
+
+meanductsize <- master_ducts %>% group_by(tree, year, site) %>% summarise(meanductsize = mean(Area))
+
+
+all_data <- merge(all_data, meanductsize, by=c('tree', 'year', 'site'))
+
+
+# verifying i have all my variables and obs after merging
+all_data$site <-as.factor(all_data$site)
+levels(all_data$site)
+all_data$tree <- as.factor(all_data$tree)
+levels(all_data$tree)
+
+remove(master_ducts, master_length, ringarea, master_all)
+````
+
+Let's add in our data given to us from UC Davis. Carbon isotope data. 
+
+```{r carbon-isotopes}
+### PULLING WUE DATA TO ADD TO ALL_DATA FILE
+
+wueavg <- read.csv("carbonisotopes.csv")
+wueavg <- rename(wueavg, id=SampleID)
+wueavg <- wueavg %>% subset(select=c(id, d13CVPDB)) # keeping only carbon isotope value and id
+wueavg <- wueavg %>% separate(id,c("site", "tree")) #removes extra 20 (for year) automatically.
+
+# merging with all_data
+all_data <- merge(all_data, wueavg, by=c("site", "tree"))
+
+## Calculating carbon discrimination value using equation from Farquhar 1989. Farquhar's calc divides by 1000 to cancel out per mille unit. Results are easier to interpret without it.
+# ((13ca-13cp)/1+C13p/1000)
+#
+
+# according to NOAA and other carbon isotope papers, atmospheric C13 (13Ca) is -8 per mille. Note that the measurements given by UC is in same unit.
+all_data$dAtmo <- -8
+
+all_data$wue <- (all_data$dAtmo-all_data$d13CVPDB)/(1+all_data$d13CVPDB/1000)
+
+## check environment to make sure that wue values appear to be in normal range for conifers.
+# they do.
+
+# Atmospheric comp varies by site so i want to subject center my c13 values. Subject centering will remove the effects that site can have on my carbon discrimination values. 
+
+
+wuecentered <- all_data %>% group_by(site) %>% summarise(wuesite=mean(wue))
+
+all_data <- merge(wuecentered, all_data, by=c("site"))
+
+all_data$wuecentered <- (all_data$wue-all_data$wuesite)
+
+all_data <- all_data %>% subset(select=-c(wuesite))
+
+
+all_data <- all_data %>% subset(select=-c(d13CVPDB, dAtmo))
+remove(wueavg, wuecentered)
+
+```
+
+### basal area calc:
+```{r fixed-effects-calc}
+## BA5, 10, and 20, are Basal Area Factors taken using PRISM tool. It calculates the basal area of stand. BA was measured at each tree to assess local neighborhood competition and density. It isn't necessary to multiply these by their factor number since i am only using it as a fixed effect, but i prefer it this way.
+
+all_data$BA20 <- all_data$BA20*20
+all_data$BA10 <- all_data$BA10*10
+all_data$BA5 <- all_data$BA5*5
+
+```
+
+
+Now we need to add our climate data 
+
+```{r climate-data}
+
+##### CWD CALCULATIONS #############
+
+##read in PRISM data for all sites
+site_climate <- read.csv("30yrnorm_sites.csv")
+
+site_climate$month <- recode(site_climate$month, January = 1, February=2, March=3, April=4, May=5, June=6, July=7, August=8, September=9, October=10, November=11, December=12)
+
+#pulling lat long site locations
+site_locations <- read.csv("site_locations.csv")
+site_locations <- merge(site_climate, site_locations, by=c("site"))
+
+# Function used to calculate CWD is: Redmond's function
+#Redmond, M.D. 2022. CWD and AET function (Version V1.0.3). Zenodo. #https://doi.org/10.5281/zenodo.6416352
+
+#function was downloaded, ran, and then used to fun command below.
+
+cwd_normal <- cwd_function(site=site_locations$site,slope=site_locations$slope,latitude=site_locations$lat,foldedaspect=site_locations$aspect,ppt=site_locations$ppt,tmean=site_locations$tmean,month=site_locations$month, soilawc=site_locations$awc..mm.,type="normal")
+
+cwd_final <- cwd_normal %>% group_by(cwd_normal$site) %>% summarise(cwd=sum(cwd))
+
+cwd_final <- cwd_final %>% rename(site="cwd_normal$site")
+
+all_data <- merge(all_data, cwd_final, by=c("site"))
+
+remove(cwd_final, cwd_normal, site_locations, site_climate)
+
+
+```
+
+The last thing to calculate is our annual FDSI values. 
+```{r FDSI-calculations}
+### pulling in compiled climate data from PRISM Climate Group, Oregon State University. Annual climate data pulled over 1999-2020 at 4k resolution. 
+
+climate_all <-read.csv('Climate_PRISM.csv')
+
+head(climate_all)
+
+## dropping temp columns
+drops<-c("tmax","tmin","tmean", "vpdmax", "vpdmin")
+climate_all<-climate_all[,!(names(climate_all) %in% drops)]
+
+##### STACK ALL CLIMATE DATA
+climate_all <- as.data.table(climate_all)
+climate_stacked<-melt(climate_all, id.vars=c("year","site","month"))
+## melt function note: melt stacks the other variables not listed in order to streamline coding applications
+
+head(climate_stacked)
+### stacked has twice as many rows because it melted and stacked the ppt and vpd variables
+levels(climate_stacked$variable)
+#combine climate variable and month together
+climate_stacked$monthvar<-paste(climate_stacked$variable,climate_stacked$month,sep="")
+head(climate_stacked)
+### doing this because we will need to calculate previous year climate
+climate_minus1<-climate_stacked
+climate_minus1$year<-climate_minus1$year+1
+
+## clarifying yr1 to avoid confusion later on. 
+climate_minus1$monthvar<-paste("yr1",climate_minus1$monthvar,sep="")
+
+## technically year 2000 is 1999. now it says 2000. year1 reminds me that its this way
+
+climate_minus2<-climate_stacked
+climate_minus2$year<-climate_stacked$year+2
+climate_minus2$monthvar<-paste("yr2",climate_minus2$monthvar,sep="")
+
+head(climate_minus2)
+
+climate_stacked_allyrs<-rbind(climate_stacked,climate_minus1,climate_minus2)
+
+head(climate_stacked_allyrs)
+
+### FDSI CALC
+
+### CALCULATIONS TAKEN FROM WILLIAMS ET AL., 2013 
+# DOI: 10.1038/NCLIMATE1693
+#https://www.nature.com/articles/nclimate1693
+
+FDSI_C <- dcast(climate_stacked_allyrs,site+year~monthvar,measure.var=c("value"))
+
+head(FDSI_C)
+
+
+FDSI_C<-as.data.table(FDSI_C)
+# pulling yr1 previous winter/fall precip and vpd data to calculate current year vpd and precip
+## vpd and ppt w/out yr1 is current year. yr1=previous year
+
+# YOU NEED 3 THINGS TO CALCULATE FDSI. 
+FDSI_raw<-FDSI_C[,.(FDSIvpd=((((vpdmean5+vpdmean6+vpdmean7)/3)+(yr1vpdmean8+yr1vpdmean9+yr1vpdmean10)/3)/2), 
+                 FDSIppt=log(yr1ppt11+yr1ppt12+ppt1+ppt2+ppt3)), by=c("site","year")]
+
+head(FDSI_raw)
+
+
+## Create stacked climate data with all monthly variables as z scores
+climatetable<- FDSI_raw
+climatetable <- as.data.table(climatetable) #needs to be a DT
+head(climatetable)
+climatetable <- na.omit(climatetable)
+meanVPD <- mean(climatetable$FDSIvpd)
+meanppt <- mean(climatetable$FDSIppt)
+SDVPD <- sd(climatetable$FDSIvpd)
+SDppt <- sd(climatetable$FDSIppt)
+SDppt
+FDSI_raw$zscoreppt <- ((FDSI_raw$FDSIppt-meanppt)/SDppt)
+FDSI_raw$zscoreVPD <- ((FDSI_raw$FDSIvpd-meanVPD)/SDVPD)
+
+FDSI_raw$FDSI <- (0.44*(FDSI_raw$zscoreppt)-0.56*(FDSI_raw$zscoreVPD))
+
+
+FDSI_raw <- FDSI_raw %>% subset(year<=2020 & year>=2000)
+FDSI_Final <- FDSI_raw %>% subset(select=c("site", "year", "FDSI"))
+### FDSI calc looks good.
+
+all_data <- merge(all_data, FDSI_Final, by=c("site", "year"))
+
+## Now we can create on big data file with all of our data for our analysis!
+
+
+
+```
+
+Finally, we are going to make one last CSV for all of our averages. This CSV will be used for our models that assess relationships among individuals.
+```{r outliers and avgs-data-frame}
+write.csv(all_data, "annual_data.csv")
+
+# we still need a dataframe for our averages
+
+# using growth12 because resin ducts were measured on 12mm cores.
+
+# before we do our averages, lets check for outliers to make sure we dont have issues. 
+par(mfrow=c(1,3))
+dotchart(all_data$conematur, main="conemature") # cone init will have same values so i wont plot that
+dotchart(all_data$resinarea2, main="resinarea") # one at 11 - HM6 - 2017 - 155
+dotchart(all_data$growth12, main="growth")
+dotchart(all_data$meanductsize, main="meanductsize") # good spread. not worried
+dotchart(all_data$totalresinarea, main="totalresinarea") # good spread - some outliers but nothing extreme
+ 
+# I am definitely going to drop the annual resin area of 11. 
+
+all_data[785,] # our outlier is in row 785
+all_data <- all_data[-785,]
+
+par(mfrow=c(1,1))
+
+# you don't need maturity here because it is avg cone abundance
+averages_data <- all_data %>% group_by(tree, site) %>% summarise(growth12=mean(growth12), conematur=mean(conematur),resinarea2=mean(resinarea2), BA5=mean(BA5), dbh=mean(dbh), wuecentered=mean(wuecentered), cwd=mean(cwd))
+
+# ok lets check our averages. 
+dotchart(tree_avgs$conematur, main="conemature") # one distinct outlier
+# no surprise here. LH 300 is my outlier. 
+
+dotchart(tree_avgs$resinarea2, main="resinarea") # two outliers
+# HM6 155 (might be due to 11 above.) and BD 160. 
+
+dotchart(tree_avgs$growth12, main="growth") # maybe two again
+# hm1 52 and fc 175
+
+
+# it may not be necessary to drop the other outliers because there isnt a tree that is an outlier for multiple variables and because i will most likely have to make transformations in my data, i won't drop for now. this was suggested by Zuur 2009.
+
+write.csv(averages_data, "averages_data.csv")
+
+
+```
+
+From here, we can move on to the analysis code using the two DF that we created.
