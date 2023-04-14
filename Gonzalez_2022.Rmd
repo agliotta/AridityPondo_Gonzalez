@@ -243,6 +243,14 @@ tab_model(tree_conesgrowth1)
 ## we are not seeing any significance in these relationships. Cones is not impacting growth and local climate is not interacting with these relationships. 
 # We are seeing that local neighborhood competition(BA5) is impacting average growth. As competition increases, average growth decreases. 
 
+ef_conegrow <-ggpredict(tree_conesgrowth, terms = c("conematur"), type = "fixed")
+
+#conegrow <-
+ggplot(ef_conegrow, aes(x = x, y = predicted, stroke=0,size=0.00005)) + geom_point(data=tree_avgs, aes(x=conematur, y=resinarea2), color="gray",
+) + geom_line(size=1)+geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) +labs(title="", y="Average Relative Duct Area (% annual ring)", x="Average Cone Abundance"
+  ) + theme_bw(base_size=9)+ theme(legend.position = "none")
+
+
 ```
 Nothing to be plotted in this last set of analyses. We aren't seeing any trade offs among functions among individuals. We did see a positive correlation between resin and growth. In that individuals who had higher growth also had higher resin. Carbon discrimination did impact average resin area. Individuals with higher carbon discrimination had lower average resin area. 
 
@@ -251,7 +259,6 @@ Nothing to be plotted in this last set of analyses. We aren't seeing any trade o
 Let's move forward with our analyses over time. This is probably where we will start seeing some interesting things. These models are divided up in the same fashion. The main question with these analyses are: How is an individual varying its resource allocation patterns annually? Are we seeing different trade off patterns over time and is climate impacting this?  
 
 ```{r resin-growth}
-
 #WUE model:
 year_ductgrow_mod <-lmer(resinarea2~growth12*wuecentered+(1|site/tree), all_data)
 
@@ -287,11 +294,12 @@ plotting model
 ef_growth1 <-ggpredict(year_ductgrow_mod1, terms = c("growth12"), type = "fixed")
 ef_growth1
 
+growthresin <-
+  ggplot(ef_growth1, aes(x = x, y = predicted, stroke=0, size=0.00005))+ geom_jitter(data=all_data, aes(x=growth12, y=resinarea2, stroke=0, size=0.0000001), color="gray",
+  ) + geom_line(size=1)+geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) +labs(title="", y="Relative Duct Area (% annual ring)", x="Annual Growth (mm)"
+) + theme_bw(base_size=9) +  theme(legend.position = "none") +annotate(geom="text", y=1.9, x=0, label="(a)",size=3,family="sans"
+)
 
-ggplot(ef_growth1, aes(x = x, y = predicted)
-    )+geom_line(linetype="F1")+geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) +labs(title="", shape="Site", y=expression("Annual Relative Resin Area ("*mm^2*")"), x="Annual Growth (mm)"
-  ) + geom_point(data=all_data, aes(growth12, totalresinarea, group=site, shape=site),
-     )+ scale_shape_manual(values=1:8) + theme_gray(base_size=9) 
 
 ef_cwd_Defgrow <-ggpredict(year_ductgrow_mod2, terms = c("growth12", "cwd[meansd]"))
 
@@ -350,11 +358,12 @@ summary(year_ductscone3)
 ef_cone <-ggpredict(year_ductscone1, terms = c("conematur"), type = "fixed")
 # let's plot these in the same manner as we have been for consistency.
 
-ggplot(ef_cone, aes(x = x, y = predicted)) +
-  geom_line(linetype="F1")+
-  geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) + geom_point(data=all_data, aes(x=conematur, y=totalresinarea, group=site, shape=site),
-  ) +labs(title="", shape="Site", y=expression("Annual Total Resin Area ("*mm^2*")"), x="Annual Cone Abundance"
-  ) + scale_shape_manual(values=1:8) + theme_gray() 
+resincones<-
+  ggplot(ef_cone, aes(x = x, y = predicted, stroke=0,size=0.00005)) + geom_jitter(data=all_data, aes(x=conematur, y=resinarea2, stroke=0, size=0.0000001), color="gray",
+) + geom_line(size=1)+geom_ribbon( aes(ymin = conf.low, ymax = conf.high), alpha = .15) +labs(title="", y="Relative Duct Area (% annual ring)", x="Annual Cone Abundance"
+  ) + theme_bw(base_size=9)+ theme(legend.position = "none")+annotate(geom="text", y=1.9, x=1, label="(b)",size=3,family="sans"
+  )
+
 
 
 
