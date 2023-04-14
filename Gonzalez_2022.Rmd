@@ -11,6 +11,7 @@ Gonzalez, A.D., Pearse, I.S., Redmond, M.D. Increased aridity is associated with
 
 The code below is separated into two groupings of models, 1) over time, and 2) among individuals. 
 
+NOTE: WHEN THIS GETS ACCEPTED YOU WILL NEED TO REMOVE THE CONE INITIATION ITEMS. BE SURE TO COMMIT TO GIT HUB BEFORE YOU DELETE SO YOU DO NOT LOSE THAT PIECE OF CODE. 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
