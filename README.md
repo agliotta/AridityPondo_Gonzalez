@@ -1,4 +1,4 @@
-# AridityPondo_Gonzalez
+# Gonzalez_etal_2023_Ecology
 
 Journal: Ecology
 
@@ -7,6 +7,10 @@ Title: Increased aridity is associated with stronger tradeoffs in ponderosa pine
 Authors: Angela D. Gonzalez, Ian S. Pearse, Miranda D. Redmond
 
 Year: 2023
+
+# Dataset Summary  
+
+Data accompanying the manuscript 'Increased aridity is associated with strong tradeoffs in ponderosa pine vital functions.' The dataset includes data used directly in the analysis described in the manuscript, as well as raw data gathered during dendrochronological lab processes prior to analysis. Please see manuscript for details on processing and data collection.  
 
 ----------------------------------------------------------------------------------------------------------
 
@@ -49,7 +53,6 @@ Raw Data:
 The unprocessed raw data gathered prior to data analysis.  
 
 carbonisotopes.csv - file containing stable carbon isotope data given after processing from UC Davis's stable isotope facility. It is recommended to see UC Davis carbon isotope facility for details prior to use of this data: https://stableisotopefacility.ucdavis.edu/    
-
 	SampleID - the site ID, Tree ID, and year (in that order). All samples have 20 denoted as the year in which the sample was taken.  
 	d13CVPD - 21-year average of the raw carbon discrimination value   
 	TotalC - 21-year total carbon for each sample  
